@@ -1,0 +1,14 @@
+{
+  "name": "1password-opvault-extension",
+  "version": "0.1.0",
+  "description": "Firefox extension to read 1Password .opvault files and auto-fill login forms",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "demo": "node src/demo.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}

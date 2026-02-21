@@ -1,0 +1,9 @@
+{
+    "name": "com.opvault.extension",
+    "description": "1Password OPVault reader for Firefox extension",
+    "path": "/Users/drapeau/Documents/Developer/1password_extension/native-host/host-wrapper.cjs",
+    "type": "stdio",
+    "allowed_extensions": [
+        "opvault-autofill@local"
+    ]
+}

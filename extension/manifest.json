@@ -1,0 +1,44 @@
+{
+    "manifest_version": 2,
+    "name": "OPVault AutoFill",
+    "version": "1.0.0",
+    "description": "Auto-fill login forms from 1Password .opvault vaults",
+    "permissions": [
+        "activeTab",
+        "clipboardWrite"
+    ],
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "opvault-autofill@local"
+        }
+    },
+    "background": {
+        "scripts": [
+            "background.js"
+        ]
+    },
+    "browser_action": {
+        "default_popup": "popup/popup.html",
+        "default_icon": {
+            "16": "icons/icon-16.svg",
+            "48": "icons/icon-48.svg"
+        },
+        "default_title": "OPVault AutoFill"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "icons": {
+        "16": "icons/icon-16.svg",
+        "48": "icons/icon-48.svg"
+    },
+    "content_security_policy": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:8737"
+}

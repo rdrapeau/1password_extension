@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OPVault AutoFill</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Lock Screen -->
+  <div id="lock-screen" class="screen active">
+    <div class="header">
+      <svg class="logo" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+      </svg>
+      <h1>OPVault AutoFill</h1>
+    </div>
+
+    <div class="form-group">
+      <label for="vault-path">Vault Path</label>
+      <input type="text" id="vault-path" placeholder="/path/to/vault.opvault" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label for="master-password">Master Password</label>
+      <input type="password" id="master-password" placeholder="Enter master password" autocomplete="off">
+    </div>
+
+    <div id="unlock-error" class="error hidden"></div>
+
+    <button id="unlock-btn" class="btn btn-primary">
+      <span class="btn-text">Unlock</span>
+      <span class="btn-loading hidden">Unlocking...</span>
+    </button>
+  </div>
+
+  <!-- Item List Screen -->
+  <div id="list-screen" class="screen">
+    <div class="header-bar">
+      <h2>Vault Items</h2>
+      <button id="lock-btn" class="btn btn-small btn-ghost" title="Lock vault">
+        🔒 Lock
+      </button>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" id="search-input" placeholder="Search items..." autocomplete="off">
+    </div>
+
+    <div id="items-container" class="items-container">
+      <div class="empty-state">No items found</div>
+    </div>
+
+    <div id="status-bar" class="status-bar">
+      <span id="item-count">0 items</span>
+      <span id="auto-lock-notice">Auto-locks in 5 min</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
