@@ -51,6 +51,7 @@ async function handleRuntimeMessage(message, sender) {
                 action: 'unlock',
                 vaultPath: message.vaultPath,
                 password: message.password,
+                autoLockMs: message.autoLockMs,
             });
             if (response.ok) {
                 isUnlocked = true;
@@ -77,6 +78,28 @@ async function handleRuntimeMessage(message, sender) {
 
         case 'list': {
             return sendToServer({ action: 'list' });
+        }
+
+        case 'enable_biometrics': {
+            return sendToServer({
+                action: 'enable_biometrics',
+                vaultPath: message.vaultPath,
+                password: message.password,
+            });
+        }
+
+        case 'biometric_unlock': {
+            const resp = await sendToServer({
+                action: 'biometric_unlock',
+                vaultPath: message.vaultPath,
+                autoLockMs: message.autoLockMs,
+            });
+            updateBadge();
+            return resp;
+        }
+
+        case 'get_item': {
+            return sendToServer({ action: 'get_item', uuid: message.uuid });
         }
 
         case 'get_logins': {

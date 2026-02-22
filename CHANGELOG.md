@@ -1,5 +1,32 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+## 2026-02-21 — Phase 7: Touch ID / macOS Keychain Integration
+
+### Added
+- **`swift_enclave.swift`** — Minimal native Swift binary that displays the macOS Touch ID / passcode prompt via `LAContext` and prints `AUTH_SUCCESS` or `AUTH_CANCELLED` to stdout.
+- **`build_swift_enclave.sh`** — Compiles and signs the Swift binary using an Apple Development certificate. Run once to set up Touch ID support.
+- **Settings → Enable Touch ID** — After unlocking the vault, users can save their master password to the macOS Keychain. Storage uses Apple's `/usr/bin/security add-generic-password` (no entitlements required).
+- **Lock screen → Unlock with Touch ID** button — Shown only when `dist/swift_enclave` is present. Triggers the native biometric prompt, then retrieves the password from Keychain via `/usr/bin/security find-generic-password`.
+- **Settings button on unlocked list screen** — ⚙️ gear icon next to the Lock button so Settings are always reachable without locking first.
+- **`test/sync.test.mjs`** — Architecture sync test ensuring `host.mjs` and `server.mjs` share identical `VaultSession` and request-handler logic.
+
+### Architecture
+The Touch ID flow is split into two independent processes to bypass macOS child-process Keychain session restrictions:
+1. **Swift binary** (`dist/swift_enclave prompt <reason>`) — shows the native biometric dialog.
+2. **`/usr/bin/security`** (Apple pre-authorized CLI) — stores and retrieves the password from the user's login Keychain.
+
+This means no code-signing entitlements are needed beyond a basic Apple Development certificate, and the vault password is encrypted at rest in the system Keychain.
+
+## 2026-02-21 — Phase 6: UI/UX Improvements
+
+### Added
+- **Configurable Settings**: New Settings UI (accessible from the lock screen and, now, the unlocked list screen) to configure the Vault Path and Auto-lock timeout. Persists non-sensitive data via `browser.storage.local`.
+- **Item Details View**: Clicking an item navigates to a rich Details view — username, passwords with 👁️ visibility toggle, clickable URLs, raw notes, and individual copy-to-clipboard with temporary "Copied" toast.
+- **Domain Highlighting**: Queries the active browser tab to surface matching items under a "Suggested" banner.
+- **Hotkey Support**: `Cmd+Shift+L` (macOS) / `Ctrl+Shift+L` (Windows/Linux) via `_execute_browser_action` in `manifest.json`.
+
 ## 2026-02-21 — Architecture: Native Messaging → Local HTTP Server
 
 ### Changed

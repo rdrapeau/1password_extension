@@ -121,6 +121,26 @@ describe('VaultSession', () => {
             /Item not found/
         );
     });
+
+    it('getItem returns full item details and metadata', async () => {
+        await session.unlock(VAULT_PATH, MASTER_PASSWORD);
+        const items = session.listAll();
+        assert.ok(items.length > 0);
+
+        const item = session.getItem(items[0].uuid);
+        assert.ok(typeof item.uuid === 'string');
+        assert.ok(typeof item.title === 'string');
+        assert.ok(typeof item.categoryName === 'string');
+        assert.ok('password' in item || 'fields' in item); // Must have details
+    });
+
+    it('getItem rejects unknown UUID', async () => {
+        await session.unlock(VAULT_PATH, MASTER_PASSWORD);
+        assert.throws(
+            () => session.getItem('nonexistent-uuid'),
+            /Item not found/
+        );
+    });
 });
 
 // ─── Security: Locked Vault ────────────────────────────────────────────
@@ -144,6 +164,10 @@ describe('Security: locked vault operations', () => {
         assert.throws(() => session.getCredentials('some-uuid'), /Vault is locked/);
     });
 
+    it('getItem throws when locked', () => {
+        assert.throws(() => session.getItem('some-uuid'), /Vault is locked/);
+    });
+
     it('operations fail after explicit lock', async () => {
         await session.unlock(VAULT_PATH, MASTER_PASSWORD);
         session.lock();
@@ -159,6 +183,13 @@ describe('Security: auto-lock timer', () => {
         await session.unlock(VAULT_PATH, MASTER_PASSWORD);
         // Timer should exist (we can verify by the internal _lockTimer field)
         assert.ok(session._lockTimer, 'auto-lock timer should be set');
+        session.lock();
+    });
+
+    it('VaultSession auto-lock is disableable by passing 0', async () => {
+        const session = new VaultSession();
+        await session.unlock(VAULT_PATH, MASTER_PASSWORD, 0);
+        assert.equal(session._lockTimer, null, 'auto-lock timer should not be set');
         session.lock();
     });
 
@@ -426,6 +457,30 @@ describe('handleMessage', () => {
         assert.ok(Array.isArray(resp.items));
 
         await handleMessage({ action: 'lock' });
+    });
+
+    it('handles get_item with valid uuid', async () => {
+        await handleMessage({
+            action: 'unlock',
+            vaultPath: VAULT_PATH,
+            password: MASTER_PASSWORD,
+        });
+
+        const listResp = await handleMessage({ action: 'list' });
+        const uuid = listResp.items[0].uuid;
+
+        const resp = await handleMessage({ action: 'get_item', uuid });
+        assert.equal(resp.ok, true);
+        assert.ok(resp.item);
+        assert.ok(typeof resp.item.title === 'string');
+
+        await handleMessage({ action: 'lock' });
+    });
+
+    it('handles get_item with missing uuid', async () => {
+        const resp = await handleMessage({ action: 'get_item' });
+        assert.equal(resp.ok, false);
+        assert.ok(resp.error.includes('Missing'));
     });
 
     it('handles get_logins with missing url', async () => {

@@ -2,3 +2,5 @@ node_modules/
 .DS_Store
 /tmp/
 *.log
+dist/swift_enclave
+dist/Info.plist

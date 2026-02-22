@@ -284,152 +284,166 @@
     </div>
 
     <script>
-// ─── Dev Harness: Server Communication & Logging ────────────────────
+        // ─── Dev Harness: Server Communication & Logging ────────────────────
 
-const SERVER_URL = 'http://127.0.0.1:8737/api';
-const logEl = document.getElementById('log');
-const serverStatusEl = document.getElementById('server-status');
-const vaultStatusEl = document.getElementById('vault-status');
+        const SERVER_URL = 'http://127.0.0.1:8737/api';
+        const logEl = document.getElementById('log');
+        const serverStatusEl = document.getElementById('server-status');
+        const vaultStatusEl = document.getElementById('vault-status');
 
-function escapeHtmlHarness(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+        function escapeHtmlHarness(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-function addLog(direction, data) {
-    const time = new Date().toTimeString().slice(0, 8);
-    const dir = direction === 'out' ? '→' : '←';
-    const cls = direction === 'out' ? 'out' : 'in';
-    let body = typeof data === 'string' ? data : JSON.stringify(data);
-    body = body.replace(/"password":"[^"]*"/g, '"password":"***"');
+        function addLog(direction, data) {
+            const time = new Date().toTimeString().slice(0, 8);
+            const dir = direction === 'out' ? '→' : '←';
+            const cls = direction === 'out' ? 'out' : 'in';
+            let body = typeof data === 'string' ? data : JSON.stringify(data);
+            body = body.replace(/"password":"[^"]*"/g, '"password":"***"');
 
-    // Remove placeholder on first real log
-    if (logEl.children.length === 1 && !logEl.querySelector('.log-dir')) {
-        logEl.innerHTML = '';
-    }
+            // Remove placeholder on first real log
+            if (logEl.children.length === 1 && !logEl.querySelector('.log-dir')) {
+                logEl.innerHTML = '';
+            }
 
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-dir ${cls}">${dir}</span><span class="log-body">${escapeHtmlHarness(body)}</span>`;
-    logEl.appendChild(entry);
-    logEl.scrollTop = logEl.scrollHeight;
-}
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">${time}</span><span class="log-dir ${cls}">${dir}</span><span class="log-body">${escapeHtmlHarness(body)}</span>`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
 
-function setServerStatus(online) {
-    const dot = online
-        ? '<span class="status-dot green"></span>'
-        : '<span class="status-dot red"></span>';
-    serverStatusEl.innerHTML = dot + (online
-        ? 'Connected (<code>localhost:8737</code>)'
-        : 'Offline — run <code>node native-host/server.mjs</code>');
-}
+        function setServerStatus(online) {
+            const dot = online
+                ? '<span class="status-dot green"></span>'
+                : '<span class="status-dot red"></span>';
+            serverStatusEl.innerHTML = dot + (online
+                ? 'Connected (<code>localhost:8737</code>)'
+                : 'Offline — run <code>node native-host/server.mjs</code>');
+        }
 
-function updateVaultStatus(request, response) {
-    setServerStatus(true);
-    if (!response.ok) return;
-    if ('locked' in response) {
-        const dot = response.locked
-            ? '<span class="status-dot red"></span>'
-            : '<span class="status-dot green"></span>';
-        vaultStatusEl.innerHTML = dot + (response.locked
-            ? 'Locked'
-            : `Unlocked (${response.itemCount} items)`);
-    }
-    if (request.action === 'unlock') {
-        vaultStatusEl.innerHTML = '<span class="status-dot green"></span>' +
-            `Unlocked (${response.itemCount} items)`;
-    }
-    if (request.action === 'lock') {
-        vaultStatusEl.innerHTML = '<span class="status-dot red"></span>Locked';
-    }
-}
+        function updateVaultStatus(request, response) {
+            setServerStatus(true);
+            if (!response.ok) return;
+            if ('locked' in response) {
+                const dot = response.locked
+                    ? '<span class="status-dot red"></span>'
+                    : '<span class="status-dot green"></span>';
+                vaultStatusEl.innerHTML = dot + (response.locked
+                    ? 'Locked'
+                    : `Unlocked (${response.itemCount} items)`);
+            }
+            if (request.action === 'unlock') {
+                vaultStatusEl.innerHTML = '<span class="status-dot green"></span>' +
+                    `Unlocked (${response.itemCount} items)`;
+            }
+            if (request.action === 'lock') {
+                vaultStatusEl.innerHTML = '<span class="status-dot red"></span>Locked';
+            }
+        }
 
-async function sendToServer(message) {
-    addLog('out', message);
-    try {
-        const res = await fetch(SERVER_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(message),
-        });
-        const data = await res.json();
-        addLog('in', data);
-        updateVaultStatus(message, data);
-        return data;
-    } catch (err) {
-        const errorResponse = {
-            ok: false,
-            error: 'Server not running. Start with: node native-host/server.mjs',
+        async function sendToServer(message) {
+            addLog('out', message);
+            try {
+                const res = await fetch(SERVER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(message),
+                });
+                const data = await res.json();
+                addLog('in', data);
+                updateVaultStatus(message, data);
+                return data;
+            } catch (err) {
+                const errorResponse = {
+                    ok: false,
+                    error: 'Server not running. Start with: node native-host/server.mjs',
+                };
+                addLog('in', errorResponse);
+                setServerStatus(false);
+                return errorResponse;
+            }
+        }
+
+        function quickAction(action) { sendToServer({ action }); }
+
+        // ─── Mock browser API ──────────────────────────────────────────────
+
+        window.browser = {
+            storage: {
+                local: {
+                    _data: {},
+                    get: async (keys) => {
+                        const result = {};
+                        for (const k of keys) result[k] = window.browser.storage.local._data[k];
+                        return result;
+                    },
+                    set: async (obj) => {
+                        Object.assign(window.browser.storage.local._data, obj);
+                    }
+                }
+            },
+            runtime: {
+                sendMessage: async (message) => {
+                    const actionMap = {
+                        unlock: (m) => ({ action: 'unlock', vaultPath: m.vaultPath, password: m.password, autoLockMs: m.autoLockMs }),
+                        lock: () => ({ action: 'lock' }),
+                        status: () => ({ action: 'status' }),
+                        list: () => ({ action: 'list' }),
+                        get_item: (m) => ({ action: 'get_item', uuid: m.uuid }),
+                        get_logins: (m) => ({ action: 'get_logins', url: m.url }),
+                        fill: (m) => ({ action: 'fill', uuid: m.uuid }),
+                        copy: (m) => ({ action: 'copy', uuid: m.uuid, field: m.field }),
+                    };
+                    const mapper = actionMap[message.type];
+                    if (!mapper) return { ok: false, error: `Unknown type: ${message.type}` };
+                    return sendToServer(mapper(message));
+                },
+                onMessage: { addListener: () => { } },
+            },
+            browserAction: {
+                setBadgeText: () => { },
+                setBadgeBackgroundColor: () => { },
+            },
+            tabs: {
+                query: async () => [{ url: 'https://example.com' }],
+                sendMessage: async () => { },
+            },
         };
-        addLog('in', errorResponse);
-        setServerStatus(false);
-        return errorResponse;
-    }
-}
 
-function quickAction(action) { sendToServer({ action }); }
+        // ─── Load Popup HTML Inline ────────────────────────────────────────
 
-// ─── Mock browser API ──────────────────────────────────────────────
+        async function loadPopup() {
+            const mount = document.getElementById('popup-mount');
+            const res = await fetch('popup/popup.html');
+            const html = await res.text();
 
-window.browser = {
-    runtime: {
-        sendMessage: async (message) => {
-            const actionMap = {
-                unlock:     (m) => ({ action: 'unlock', vaultPath: m.vaultPath, password: m.password }),
-                lock:       ()  => ({ action: 'lock' }),
-                status:     ()  => ({ action: 'status' }),
-                list:       ()  => ({ action: 'list' }),
-                get_logins: (m) => ({ action: 'get_logins', url: m.url }),
-                fill:       (m) => ({ action: 'fill', uuid: m.uuid }),
-                copy:       (m) => ({ action: 'copy', uuid: m.uuid, field: m.field }),
-            };
-            const mapper = actionMap[message.type];
-            if (!mapper) return { ok: false, error: `Unknown type: ${message.type}` };
-            return sendToServer(mapper(message));
-        },
-        onMessage: { addListener: () => {} },
-    },
-    browserAction: {
-        setBadgeText: () => {},
-        setBadgeBackgroundColor: () => {},
-    },
-    tabs: {
-        query: async () => [],
-        sendMessage: async () => {},
-    },
-};
+            // Extract the body content (between <body> and </body>)
+            const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+            const bodyContent = bodyMatch ? bodyMatch[1] : html;
 
-// ─── Load Popup HTML Inline ────────────────────────────────────────
+            // Remove script tags — we'll load popup.js ourselves after injecting content
+            const cleaned = bodyContent.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+            mount.innerHTML = cleaned;
 
-async function loadPopup() {
-    const mount = document.getElementById('popup-mount');
-    const res = await fetch('popup/popup.html');
-    const html = await res.text();
+            // Load popup.js after DOM is ready
+            const script = document.createElement('script');
+            script.src = 'popup/popup.js';
+            document.body.appendChild(script);
+        }
 
-    // Extract the body content (between <body> and </body>)
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+        function reloadPopup() {
+            // Remove old popup script
+            const oldScripts = document.querySelectorAll('script[src*="popup.js"]');
+            oldScripts.forEach(s => s.remove());
+            loadPopup();
+        }
 
-    // Remove script tags — we'll load popup.js ourselves after injecting content
-    const cleaned = bodyContent.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-    mount.innerHTML = cleaned;
+        // ─── Init ──────────────────────────────────────────────────────────
 
-    // Load popup.js after DOM is ready
-    const script = document.createElement('script');
-    script.src = 'popup/popup.js';
-    document.body.appendChild(script);
-}
-
-function reloadPopup() {
-    // Remove old popup script
-    const oldScripts = document.querySelectorAll('script[src*="popup.js"]');
-    oldScripts.forEach(s => s.remove());
-    loadPopup();
-}
-
-// ─── Init ──────────────────────────────────────────────────────────
-
-sendToServer({ action: 'status' });
-loadPopup();
+        sendToServer({ action: 'status' });
+        loadPopup();
     </script>
 
 </body>

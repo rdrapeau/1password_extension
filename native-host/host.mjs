@@ -46,6 +46,16 @@ import {
     zeroBuffer,
     CATEGORY,
 } from '../src/opvault.mjs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import fs from 'node:fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const swiftEnclavePath = path.join(__dirname, '..', 'dist', 'swift_enclave');
+const execFileAsync = promisify(execFile);
 
 // ─── Configuration ─────────────────────────────────────────────────────
 
@@ -61,37 +71,28 @@ class VaultSession {
     constructor() {
         this._masterKeys = null;
         this._overviewKeys = null;
-        this._items = null;       // raw band items
-        this._overviews = null;   // Map<uuid, decrypted overview>
+        this._items = null;
+        this._overviews = null;
         this._vaultPath = null;
         this._lockTimer = null;
+        this._autoLockMs = AUTO_LOCK_MS; // default
+        this._masterPassword = null; // Store master password for biometric re-unlock
     }
 
-    get isUnlocked() {
-        return this._masterKeys !== null;
-    }
+    get isUnlocked() { return this._masterKeys !== null; }
+    get vaultPath() { return this._vaultPath; }
+    get itemCount() { return this._items ? this._items.length : 0; }
+    get masterPassword() { return this._masterPassword; }
 
-    get vaultPath() {
-        return this._vaultPath;
-    }
-
-    get itemCount() {
-        return this._items ? this._items.length : 0;
-    }
-
-    /**
-     * Unlock vault: derive keys, decrypt master/overview keys, load items.
-     */
-    async unlock(vaultPath, masterPassword) {
-        // Lock any existing session first
+    async unlock(vaultPath, masterPassword, autoLockMs = AUTO_LOCK_MS) {
         this.lock();
-
+        this._autoLockMs = autoLockMs;
         const { masterKeys, overviewKeys } = await unlockVault(vaultPath, masterPassword);
         this._masterKeys = masterKeys;
         this._overviewKeys = overviewKeys;
         this._vaultPath = vaultPath;
+        this._masterPassword = masterPassword; // Store for potential biometric re-unlock
 
-        // Load and decrypt all item overviews (lightweight metadata)
         this._items = await loadBandItems(vaultPath);
         this._overviews = new Map();
 
@@ -104,18 +105,12 @@ class VaultSession {
                 );
                 this._overviews.set(item.uuid, overview);
             } catch {
-                // Skip items that fail to decrypt (e.g. tombstones)
                 this._overviews.set(item.uuid, {});
             }
         }
-
-        // Start auto-lock timer
         this._resetLockTimer();
     }
 
-    /**
-     * Lock vault: zero all key material and clear items from memory.
-     */
     lock() {
         if (this._masterKeys) {
             zeroBuffer(this._masterKeys.encKey);
@@ -130,43 +125,32 @@ class VaultSession {
         this._items = null;
         this._overviews = null;
         this._vaultPath = null;
-
+        if (this._masterPassword) {
+            // Zero out the stored master password
+            const buffer = Buffer.from(this._masterPassword, 'utf8');
+            buffer.fill(0);
+            this._masterPassword = null;
+        }
         if (this._lockTimer) {
             clearTimeout(this._lockTimer);
             this._lockTimer = null;
         }
     }
 
-    /**
-     * Reset the auto-lock idle timer.
-     */
     _resetLockTimer() {
-        if (this._lockTimer) {
-            clearTimeout(this._lockTimer);
-        }
-        this._lockTimer = setTimeout(() => {
-            this.lock();
-        }, AUTO_LOCK_MS);
-        // Don't let the timer keep the process alive
-        if (this._lockTimer.unref) {
-            this._lockTimer.unref();
+        if (this._lockTimer) clearTimeout(this._lockTimer);
+        // If autoLockMs is 0, disable auto-lock entirely
+        if (this._autoLockMs > 0) {
+            this._lockTimer = setTimeout(() => this.lock(), this._autoLockMs);
         }
     }
 
-    /**
-     * Find items matching a URL.
-     * Returns lightweight overview data (no passwords).
-     */
     findByUrl(url) {
         this._assertUnlocked();
         this._resetLockTimer();
-
         const results = [];
         for (const item of this._items) {
             const overview = this._overviews.get(item.uuid) || {};
-            const categoryName = CATEGORY[item.category] || 'Unknown';
-
-            // Match by URL in overview
             const itemUrl = overview.url || '';
             if (itemUrl && urlMatches(itemUrl, url)) {
                 results.push({
@@ -174,21 +158,16 @@ class VaultSession {
                     title: overview.title || '(untitled)',
                     username: overview.ainfo || '',
                     url: itemUrl,
-                    categoryName,
+                    categoryName: CATEGORY[item.category] || 'Unknown',
                 });
             }
         }
-
         return results;
     }
 
-    /**
-     * List all items (overview only, no passwords).
-     */
     listAll() {
         this._assertUnlocked();
         this._resetLockTimer();
-
         return this._items.map(item => {
             const overview = this._overviews.get(item.uuid) || {};
             return {
@@ -201,48 +180,55 @@ class VaultSession {
         });
     }
 
-    /**
-     * Get full credentials for a specific item (on-demand only).
-     */
     getCredentials(uuid) {
         this._assertUnlocked();
         this._resetLockTimer();
-
         const item = this._items.find(i => i.uuid === uuid);
-        if (!item) {
-            throw new Error(`Item not found: ${uuid}`);
-        }
+        if (!item) throw new Error(`Item not found: ${uuid}`);
 
         const details = decryptItemDetails(
             item,
             this._masterKeys.encKey,
             this._masterKeys.macKey
         );
-
         const overview = this._overviews.get(uuid) || {};
 
-        // Extract username/password from fields
         let username = overview.ainfo || '';
         let password = details.password || '';
-
         if (details.fields) {
             for (const field of details.fields) {
-                if (field.designation === 'username' && field.value) {
-                    username = field.value;
-                }
-                if (field.designation === 'password' && field.value) {
-                    password = field.value;
-                }
+                if (field.designation === 'username' && field.value) username = field.value;
+                if (field.designation === 'password' && field.value) password = field.value;
             }
         }
-
         return { username, password, title: overview.title || '' };
     }
 
+    getItem(uuid) {
+        this._assertUnlocked();
+        this._resetLockTimer();
+        const item = this._items.find(i => i.uuid === uuid);
+        if (!item) throw new Error(`Item not found: ${uuid}`);
+
+        const details = decryptItemDetails(
+            item,
+            this._masterKeys.encKey,
+            this._masterKeys.macKey
+        );
+        const overview = this._overviews.get(uuid) || {};
+
+        return {
+            uuid: item.uuid,
+            title: overview.title || '(untitled)',
+            categoryName: CATEGORY[item.category] || 'Unknown',
+            url: overview.url || '',
+            username: overview.ainfo || '',
+            ...details,
+        };
+    }
+
     _assertUnlocked() {
-        if (!this.isUnlocked) {
-            throw new Error('Vault is locked');
-        }
+        if (!this.isUnlocked) throw new Error('Vault is locked');
     }
 }
 
@@ -257,21 +243,15 @@ function urlMatches(itemUrl, requestUrl) {
         const item = normalizeUrl(itemUrl);
         const request = normalizeUrl(requestUrl);
         if (!item || !request) return false;
-
-        // Exact hostname match or subdomain match
         return request.hostname === item.hostname ||
             request.hostname.endsWith('.' + item.hostname) ||
             item.hostname.endsWith('.' + request.hostname);
     } catch {
-        // Fallback: simple string containment
         return requestUrl.toLowerCase().includes(itemUrl.toLowerCase()) ||
             itemUrl.toLowerCase().includes(requestUrl.toLowerCase());
     }
 }
 
-/**
- * Normalize a URL string to a URL object, handling missing protocols.
- */
 function normalizeUrl(urlStr) {
     if (!urlStr) return null;
     try {
@@ -370,59 +350,124 @@ async function handleMessage(msg) {
                 if (!msg.vaultPath || !msg.password) {
                     return { ok: false, error: 'Missing vaultPath or password' };
                 }
-                await session.unlock(msg.vaultPath, msg.password);
+                const autoLockMs = typeof msg.autoLockMs === 'number' ? msg.autoLockMs : AUTO_LOCK_MS;
+                await session.unlock(msg.vaultPath, msg.password, autoLockMs);
                 return { ok: true, itemCount: session.itemCount };
             }
-
             case 'lock': {
                 session.lock();
                 return { ok: true };
             }
-
             case 'status': {
+                let biometricsAvailable = false;
+                try {
+                    await fs.promises.access(swiftEnclavePath, fs.constants.X_OK);
+                    biometricsAvailable = true;
+                } catch (e) {
+                    biometricsAvailable = false;
+                }
                 return {
                     ok: true,
                     locked: !session.isUnlocked,
                     itemCount: session.itemCount,
                     vaultPath: session.vaultPath || null,
+                    biometricsAvailable: biometricsAvailable,
                 };
+            }
+            case 'enable_biometrics': {
+                if (!session.isUnlocked) return { ok: false, error: 'Vault must be unlocked to enable biometrics' };
+                if (!session.vaultPath || !session.masterPassword) return { ok: false, error: 'Vault path or master password not available in session' };
+
+                try {
+                    // Use Apple's own `security` CLI to store in user Keychain — no entitlements needed
+                    await execFileAsync('/usr/bin/security', [
+                        'add-generic-password',
+                        '-s', '1Password OPVault Extension',
+                        '-a', session.vaultPath,
+                        '-w', session.masterPassword,
+                        '-U', // Update if exists
+                    ]);
+                    return { ok: true };
+                } catch (e) {
+                    return { ok: false, error: `Failed to store credentials: ${e.message}` };
+                }
+            }
+            case 'biometric_unlock': {
+                if (!msg.vaultPath) return { ok: false, error: 'Missing vaultPath' };
+
+                try {
+                    const prompt = `Unlock 1Password OPVault at ${msg.vaultPath}`;
+
+                    // 1. Show Touch ID prompt via Swift binary
+                    const { stdout: authOut } = await execFileAsync(swiftEnclavePath, ['prompt', prompt]);
+                    if (authOut.includes('AUTH_CANCELLED')) {
+                        return { ok: false, error: 'User cancelled biometric authentication' };
+                    }
+                    if (!authOut.includes('AUTH_SUCCESS')) {
+                        return { ok: false, error: 'Touch ID authentication failed' };
+                    }
+
+                    // 2. Retrieve password from user Keychain via Apple's `security` CLI
+                    let masterPassword;
+                    try {
+                        const { stdout: pwOut } = await execFileAsync('/usr/bin/security', [
+                            'find-generic-password',
+                            '-s', '1Password OPVault Extension',
+                            '-a', msg.vaultPath,
+                            '-w', // output password only
+                        ]);
+                        masterPassword = pwOut.trim();
+                    } catch (e) {
+                        return { ok: false, error: 'No biometric credentials found for this vault. Please enable Touch ID first.' };
+                    }
+
+                    if (!masterPassword) {
+                        return { ok: false, error: 'No biometric credentials found for this vault' };
+                    }
+
+                    const autoLockMs = typeof msg.autoLockMs === 'number' ? msg.autoLockMs : AUTO_LOCK_MS;
+                    await session.unlock(msg.vaultPath, masterPassword, autoLockMs);
+
+                    // Zero buffer for the retrieved password
+                    const buffer = Buffer.from(masterPassword, 'utf8');
+                    buffer.fill(0);
+
+                    return { ok: true, itemCount: session.itemCount };
+                } catch (e) {
+                    return { ok: false, error: e.message || 'Biometric unlock failed' };
+                }
             }
 
             case 'get_logins': {
-                if (!msg.url) {
-                    return { ok: false, error: 'Missing url' };
-                }
-                const items = session.findByUrl(msg.url);
-                return { ok: true, items };
+                if (!msg.url) return { ok: false, error: 'Missing url' };
+                return { ok: true, items: session.findByUrl(msg.url) };
             }
 
             case 'fill': {
-                if (!msg.uuid) {
-                    return { ok: false, error: 'Missing uuid' };
-                }
+                if (!msg.uuid) return { ok: false, error: 'Missing uuid' };
                 const creds = session.getCredentials(msg.uuid);
                 return { ok: true, username: creds.username, password: creds.password };
             }
 
             case 'copy': {
-                if (!msg.uuid) {
-                    return { ok: false, error: 'Missing uuid' };
-                }
+                if (!msg.uuid) return { ok: false, error: 'Missing uuid' };
                 const field = msg.field || 'password';
                 if (!['username', 'password'].includes(field)) {
-                    return { ok: false, error: `Invalid field: ${field}` };
+                    return { ok: false, error: `Invalid field: ${field} ` };
                 }
                 const credentials = session.getCredentials(msg.uuid);
                 return { ok: true, value: credentials[field] };
             }
-
             case 'list': {
-                const allItems = session.listAll();
-                return { ok: true, items: allItems };
+                return { ok: true, items: session.listAll() };
+            }
+            case 'get_item': {
+                if (!msg.uuid) return { ok: false, error: 'Missing uuid' };
+                return { ok: true, item: session.getItem(msg.uuid) };
             }
 
             default:
-                return { ok: false, error: `Unknown action: ${msg.action}` };
+                return { ok: false, error: `Unknown action: ${msg.action} ` };
         }
     } catch (err) {
         // Never leak internal error details — redact stack traces

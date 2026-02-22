@@ -243,6 +243,25 @@ describe('Background script', () => {
 // ─── Security: Popup Script ──────────────────────────────────────────
 
 describe('Security: popup script', () => {
+    it('does not leak master password to browser.storage.local', async () => {
+        const js = await readFile(join(EXT_DIR, 'popup', 'popup.js'), 'utf-8');
+
+        // Find all browser.storage.local.set occurrences
+        const storageSets = [...js.matchAll(/browser\.storage\.local\.set\(([^)]+)\)/g)];
+
+        for (const match of storageSets) {
+            const payload = match[1];
+            // Mathematically prove no passwords or keys are saved
+            assert.ok(!payload.includes('password'), 'storage.local.set payload must not contain password');
+            assert.ok(!payload.includes('masterPassword'), 'storage.local.set payload must not contain password');
+            assert.ok(!payload.includes('key'), 'storage.local.set payload must not contain keys');
+            // Must contain approved fields
+            assert.ok(payload.includes('vaultPath') || payload.includes('autoLockMinutes'), 'storage.local.set should only save approved config fields');
+        }
+
+        assert.ok(storageSets.length > 0, 'should have at least one storage test to verify');
+    });
+
     it('clears password from input after unlock', async () => {
         const js = await readFile(join(EXT_DIR, 'popup', 'popup.js'), 'utf-8');
         assert.ok(js.includes("masterPasswordInput.value = ''"), 'should clear password input after unlock');

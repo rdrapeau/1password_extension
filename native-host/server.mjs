@@ -22,6 +22,17 @@ import {
     zeroBuffer,
     CATEGORY,
 } from '../src/opvault.mjs';
+import { pbkdf2Sync } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const swiftEnclavePath = path.join(__dirname, '..', 'dist', 'swift_enclave');
+const execFileAsync = promisify(execFile);
 
 // ─── Configuration ─────────────────────────────────────────────────────
 
@@ -53,18 +64,23 @@ class VaultSession {
         this._overviews = null;
         this._vaultPath = null;
         this._lockTimer = null;
+        this._autoLockMs = AUTO_LOCK_MS; // default
+        this._masterPassword = null; // Store master password for biometric re-unlock
     }
 
     get isUnlocked() { return this._masterKeys !== null; }
     get vaultPath() { return this._vaultPath; }
     get itemCount() { return this._items ? this._items.length : 0; }
+    get masterPassword() { return this._masterPassword; }
 
-    async unlock(vaultPath, masterPassword) {
+    async unlock(vaultPath, masterPassword, autoLockMs = AUTO_LOCK_MS) {
         this.lock();
+        this._autoLockMs = autoLockMs;
         const { masterKeys, overviewKeys } = await unlockVault(vaultPath, masterPassword);
         this._masterKeys = masterKeys;
         this._overviewKeys = overviewKeys;
         this._vaultPath = vaultPath;
+        this._masterPassword = masterPassword; // Store for potential biometric re-unlock
 
         this._items = await loadBandItems(vaultPath);
         this._overviews = new Map();
@@ -98,6 +114,12 @@ class VaultSession {
         this._items = null;
         this._overviews = null;
         this._vaultPath = null;
+        if (this._masterPassword) {
+            // Zero out the stored master password
+            const buffer = Buffer.from(this._masterPassword, 'utf8');
+            buffer.fill(0);
+            this._masterPassword = null;
+        }
         if (this._lockTimer) {
             clearTimeout(this._lockTimer);
             this._lockTimer = null;
@@ -106,7 +128,10 @@ class VaultSession {
 
     _resetLockTimer() {
         if (this._lockTimer) clearTimeout(this._lockTimer);
-        this._lockTimer = setTimeout(() => this.lock(), AUTO_LOCK_MS);
+        // If autoLockMs is 0, disable auto-lock entirely
+        if (this._autoLockMs > 0) {
+            this._lockTimer = setTimeout(() => this.lock(), this._autoLockMs);
+        }
     }
 
     findByUrl(url) {
@@ -168,6 +193,29 @@ class VaultSession {
         return { username, password, title: overview.title || '' };
     }
 
+    getItem(uuid) {
+        this._assertUnlocked();
+        this._resetLockTimer();
+        const item = this._items.find(i => i.uuid === uuid);
+        if (!item) throw new Error(`Item not found: ${uuid}`);
+
+        const details = decryptItemDetails(
+            item,
+            this._masterKeys.encKey,
+            this._masterKeys.macKey
+        );
+        const overview = this._overviews.get(uuid) || {};
+
+        return {
+            uuid: item.uuid,
+            title: overview.title || '(untitled)',
+            categoryName: CATEGORY[item.category] || 'Unknown',
+            url: overview.url || '',
+            username: overview.ainfo || '',
+            ...details,
+        };
+    }
+
     _assertUnlocked() {
         if (!this.isUnlocked) throw new Error('Vault is locked');
     }
@@ -212,7 +260,8 @@ async function handleRequest(msg) {
                 if (!msg.vaultPath || !msg.password) {
                     return { ok: false, error: 'Missing vaultPath or password' };
                 }
-                await session.unlock(msg.vaultPath, msg.password);
+                const autoLockMs = typeof msg.autoLockMs === 'number' ? msg.autoLockMs : AUTO_LOCK_MS;
+                await session.unlock(msg.vaultPath, msg.password, autoLockMs);
                 return { ok: true, itemCount: session.itemCount };
             }
             case 'lock': {
@@ -220,12 +269,83 @@ async function handleRequest(msg) {
                 return { ok: true };
             }
             case 'status': {
+                let biometricsAvailable = false;
+                try {
+                    await fs.promises.access(swiftEnclavePath, fs.constants.X_OK);
+                    biometricsAvailable = true;
+                } catch (e) {
+                    biometricsAvailable = false;
+                }
                 return {
                     ok: true,
                     locked: !session.isUnlocked,
                     itemCount: session.itemCount,
                     vaultPath: session.vaultPath || null,
+                    biometricsAvailable: biometricsAvailable,
                 };
+            }
+            case 'enable_biometrics': {
+                if (!session.isUnlocked) return { ok: false, error: 'Vault must be unlocked to enable biometrics' };
+                if (!session.vaultPath || !session.masterPassword) return { ok: false, error: 'Vault path or master password not available in session' };
+
+                try {
+                    // Use Apple's own `security` CLI to store in user Keychain — no entitlements needed
+                    await execFileAsync('/usr/bin/security', [
+                        'add-generic-password',
+                        '-s', '1Password OPVault Extension',
+                        '-a', session.vaultPath,
+                        '-w', session.masterPassword,
+                        '-U', // Update if exists
+                    ]);
+                    return { ok: true };
+                } catch (e) {
+                    return { ok: false, error: `Failed to store credentials: ${e.message}` };
+                }
+            }
+            case 'biometric_unlock': {
+                if (!msg.vaultPath) return { ok: false, error: 'Missing vaultPath' };
+
+                try {
+                    const prompt = `Unlock 1Password OPVault at ${msg.vaultPath}`;
+
+                    // 1. Show Touch ID prompt via Swift binary
+                    const { stdout: authOut } = await execFileAsync(swiftEnclavePath, ['prompt', prompt]);
+                    if (authOut.includes('AUTH_CANCELLED')) {
+                        return { ok: false, error: 'User cancelled biometric authentication' };
+                    }
+                    if (!authOut.includes('AUTH_SUCCESS')) {
+                        return { ok: false, error: 'Touch ID authentication failed' };
+                    }
+
+                    // 2. Retrieve password from user Keychain via Apple's `security` CLI
+                    let masterPassword;
+                    try {
+                        const { stdout: pwOut } = await execFileAsync('/usr/bin/security', [
+                            'find-generic-password',
+                            '-s', '1Password OPVault Extension',
+                            '-a', msg.vaultPath,
+                            '-w', // output password only
+                        ]);
+                        masterPassword = pwOut.trim();
+                    } catch (e) {
+                        return { ok: false, error: 'No biometric credentials found for this vault. Please enable Touch ID first.' };
+                    }
+
+                    if (!masterPassword) {
+                        return { ok: false, error: 'No biometric credentials found for this vault' };
+                    }
+
+                    const autoLockMs = typeof msg.autoLockMs === 'number' ? msg.autoLockMs : AUTO_LOCK_MS;
+                    await session.unlock(msg.vaultPath, masterPassword, autoLockMs);
+
+                    // Zero buffer for the retrieved password
+                    const buffer = Buffer.from(masterPassword, 'utf8');
+                    buffer.fill(0);
+
+                    return { ok: true, itemCount: session.itemCount };
+                } catch (e) {
+                    return { ok: false, error: e.message || 'Biometric unlock failed' };
+                }
             }
             case 'get_logins': {
                 if (!msg.url) return { ok: false, error: 'Missing url' };
@@ -247,6 +367,10 @@ async function handleRequest(msg) {
             }
             case 'list': {
                 return { ok: true, items: session.listAll() };
+            }
+            case 'get_item': {
+                if (!msg.uuid) return { ok: false, error: 'Missing uuid' };
+                return { ok: true, item: session.getItem(msg.uuid) };
             }
             default:
                 return { ok: false, error: `Unknown action: ${msg.action}` };

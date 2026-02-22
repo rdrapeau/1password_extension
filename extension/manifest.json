@@ -19,11 +19,17 @@
     },
     "browser_action": {
         "default_popup": "popup/popup.html",
-        "default_icon": {
-            "16": "icons/icon-16.svg",
-            "48": "icons/icon-48.svg"
-        },
-        "default_title": "OPVault AutoFill"
+        "default_icon": "icons/icon-48.svg",
+        "default_title": "OPVault"
+    },
+    "commands": {
+        "_execute_browser_action": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+L",
+                "mac": "Command+Shift+L"
+            },
+            "description": "Open OPVault Extension"
+        }
     },
     "content_scripts": [
         {
