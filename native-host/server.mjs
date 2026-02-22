@@ -29,15 +29,17 @@ const PORT = 8737;
 const HOST = '127.0.0.1'; // Only localhost — never expose to network
 const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 minutes
 
-// ─── CORS origin whitelist (only our extension) ────────────────────────
+// ─── CORS origin whitelist (only our extension & dev harness) ──────
 
 function isAllowedOrigin(origin) {
-    // Allow moz-extension:// origins (our extension)
     // Allow null origin (for local file testing)
-    if (!origin) return true;
+    if (!origin || origin === 'null') return true;
+    // Allow extension origins
     if (origin.startsWith('moz-extension://')) return true;
     if (origin.startsWith('chrome-extension://')) return true;
-    if (origin === 'null') return true;
+    // Allow local dev harness (e.g. http://localhost:3000)
+    if (origin.startsWith('http://localhost:')) return true;
+    if (origin.startsWith('http://127.0.0.1:')) return true;
     return false;
 }
 

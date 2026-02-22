@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPVault Extension — Dev Harness</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+
+        .harness {
+            display: flex;
+            gap: 32px;
+            align-items: flex-start;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        /* Popup container */
+        .popup-frame {
+            flex-shrink: 0;
+            width: 360px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .popup-frame-header {
+            background: #16213e;
+            color: #8892b0;
+            padding: 8px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .popup-frame-header button {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #8892b0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .popup-frame-header button:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+            color: #ccd6f6;
+        }
+
+        .popup-content {
+            width: 360px;
+            min-height: 520px;
+            background: #0f0f23;
+        }
+
+        /* Controls panel */
+        .controls {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .controls h2 {
+            font-size: 14px;
+            color: #8892b0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+
+        .card {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .card h3 {
+            font-size: 13px;
+            color: #64ffda;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .status-dot.green {
+            background: #2ecc71;
+            box-shadow: 0 0 6px #2ecc71;
+        }
+
+        .status-dot.red {
+            background: #e74c3c;
+            box-shadow: 0 0 6px #e74c3c;
+        }
+
+        .status-dot.yellow {
+            background: #f1c40f;
+            box-shadow: 0 0 6px #f1c40f;
+        }
+
+        #server-status,
+        #vault-status {
+            font-size: 13px;
+            color: #ccd6f6;
+        }
+
+        #server-status code,
+        #vault-status code {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        /* Log */
+        .log {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 11px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            display: flex;
+            gap: 8px;
+        }
+
+        .log-time {
+            color: #495670;
+            flex-shrink: 0;
+        }
+
+        .log-dir {
+            flex-shrink: 0;
+            font-weight: 700;
+            width: 16px;
+            text-align: center;
+        }
+
+        .log-dir.out {
+            color: #64ffda;
+        }
+
+        .log-dir.in {
+            color: #f9a825;
+        }
+
+        .log-body {
+            color: #a8b2d1;
+            word-break: break-all;
+        }
+
+        /* Quick actions */
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            background: #0f3460;
+            color: #64ffda;
+            border: 1px solid rgba(100, 255, 218, 0.2);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .action-btn:hover {
+            background: #1a4a7a;
+            border-color: rgba(100, 255, 218, 0.5);
+        }
+
+        .action-btn.danger {
+            color: #e74c3c;
+            border-color: rgba(231, 76, 60, 0.2);
+        }
+
+        .action-btn.danger:hover {
+            border-color: rgba(231, 76, 60, 0.5);
+        }
+
+        @media (max-width: 800px) {
+            .harness {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .controls {
+                width: 360px;
+                min-width: auto;
+            }
+        }
+    </style>
+    <!-- Load popup CSS directly -->
+    <link rel="stylesheet" href="popup/popup.css">
+</head>
+
+<body>
+
+    <div class="harness">
+        <!-- Popup rendered inline -->
+        <div class="popup-frame">
+            <div class="popup-frame-header">
+                <span>🔐 Extension Popup</span>
+                <button onclick="reloadPopup()">↻ Reload</button>
+            </div>
+            <div class="popup-content" id="popup-mount"></div>
+        </div>
+
+        <!-- Dev controls -->
+        <div class="controls">
+            <h2>Dev Harness</h2>
+
+            <div class="card">
+                <h3>Server</h3>
+                <div id="server-status">
+                    <span class="status-dot yellow"></span> Checking...
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Vault</h3>
+                <div id="vault-status">
+                    <span class="status-dot yellow"></span> Unknown
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Quick Actions</h3>
+                <div class="actions">
+                    <button class="action-btn" onclick="quickAction('status')">Status</button>
+                    <button class="action-btn" onclick="quickAction('list')">List Items</button>
+                    <button class="action-btn danger" onclick="quickAction('lock')">Lock</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Message Log</h3>
+                <div id="log" class="log">
+                    <div class="log-entry">
+                        <span class="log-time">--:--:--</span>
+                        <span class="log-body" style="color:#495670">Waiting for messages...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+// ─── Dev Harness: Server Communication & Logging ────────────────────
+
+const SERVER_URL = 'http://127.0.0.1:8737/api';
+const logEl = document.getElementById('log');
+const serverStatusEl = document.getElementById('server-status');
+const vaultStatusEl = document.getElementById('vault-status');
+
+function escapeHtmlHarness(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function addLog(direction, data) {
+    const time = new Date().toTimeString().slice(0, 8);
+    const dir = direction === 'out' ? '→' : '←';
+    const cls = direction === 'out' ? 'out' : 'in';
+    let body = typeof data === 'string' ? data : JSON.stringify(data);
+    body = body.replace(/"password":"[^"]*"/g, '"password":"***"');
+
+    // Remove placeholder on first real log
+    if (logEl.children.length === 1 && !logEl.querySelector('.log-dir')) {
+        logEl.innerHTML = '';
+    }
+
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-dir ${cls}">${dir}</span><span class="log-body">${escapeHtmlHarness(body)}</span>`;
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setServerStatus(online) {
+    const dot = online
+        ? '<span class="status-dot green"></span>'
+        : '<span class="status-dot red"></span>';
+    serverStatusEl.innerHTML = dot + (online
+        ? 'Connected (<code>localhost:8737</code>)'
+        : 'Offline — run <code>node native-host/server.mjs</code>');
+}
+
+function updateVaultStatus(request, response) {
+    setServerStatus(true);
+    if (!response.ok) return;
+    if ('locked' in response) {
+        const dot = response.locked
+            ? '<span class="status-dot red"></span>'
+            : '<span class="status-dot green"></span>';
+        vaultStatusEl.innerHTML = dot + (response.locked
+            ? 'Locked'
+            : `Unlocked (${response.itemCount} items)`);
+    }
+    if (request.action === 'unlock') {
+        vaultStatusEl.innerHTML = '<span class="status-dot green"></span>' +
+            `Unlocked (${response.itemCount} items)`;
+    }
+    if (request.action === 'lock') {
+        vaultStatusEl.innerHTML = '<span class="status-dot red"></span>Locked';
+    }
+}
+
+async function sendToServer(message) {
+    addLog('out', message);
+    try {
+        const res = await fetch(SERVER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+        });
+        const data = await res.json();
+        addLog('in', data);
+        updateVaultStatus(message, data);
+        return data;
+    } catch (err) {
+        const errorResponse = {
+            ok: false,
+            error: 'Server not running. Start with: node native-host/server.mjs',
+        };
+        addLog('in', errorResponse);
+        setServerStatus(false);
+        return errorResponse;
+    }
+}
+
+function quickAction(action) { sendToServer({ action }); }
+
+// ─── Mock browser API ──────────────────────────────────────────────
+
+window.browser = {
+    runtime: {
+        sendMessage: async (message) => {
+            const actionMap = {
+                unlock:     (m) => ({ action: 'unlock', vaultPath: m.vaultPath, password: m.password }),
+                lock:       ()  => ({ action: 'lock' }),
+                status:     ()  => ({ action: 'status' }),
+                list:       ()  => ({ action: 'list' }),
+                get_logins: (m) => ({ action: 'get_logins', url: m.url }),
+                fill:       (m) => ({ action: 'fill', uuid: m.uuid }),
+                copy:       (m) => ({ action: 'copy', uuid: m.uuid, field: m.field }),
+            };
+            const mapper = actionMap[message.type];
+            if (!mapper) return { ok: false, error: `Unknown type: ${message.type}` };
+            return sendToServer(mapper(message));
+        },
+        onMessage: { addListener: () => {} },
+    },
+    browserAction: {
+        setBadgeText: () => {},
+        setBadgeBackgroundColor: () => {},
+    },
+    tabs: {
+        query: async () => [],
+        sendMessage: async () => {},
+    },
+};
+
+// ─── Load Popup HTML Inline ────────────────────────────────────────
+
+async function loadPopup() {
+    const mount = document.getElementById('popup-mount');
+    const res = await fetch('popup/popup.html');
+    const html = await res.text();
+
+    // Extract the body content (between <body> and </body>)
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+    // Remove script tags — we'll load popup.js ourselves after injecting content
+    const cleaned = bodyContent.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    mount.innerHTML = cleaned;
+
+    // Load popup.js after DOM is ready
+    const script = document.createElement('script');
+    script.src = 'popup/popup.js';
+    document.body.appendChild(script);
+}
+
+function reloadPopup() {
+    // Remove old popup script
+    const oldScripts = document.querySelectorAll('script[src*="popup.js"]');
+    oldScripts.forEach(s => s.remove());
+    loadPopup();
+}
+
+// ─── Init ──────────────────────────────────────────────────────────
+
+sendToServer({ action: 'status' });
+loadPopup();
+    </script>
+
+</body>
+
+</html>

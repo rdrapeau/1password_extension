@@ -33,6 +33,20 @@ node native-host/server.mjs
 ### 3. Use it
 Click the extension icon → enter your vault path and master password → search, copy, or auto-fill.
 
+## Development
+
+To rapidly iterate on the popup UI (HTML/CSS/JS) without repeatedly reloading the extension in Firefox, you can use the **Dev Harness**:
+
+1. Ensure the OPVault server is running (`node native-host/server.mjs`)
+2. Start a local static file server in the `extension` directory:
+   ```bash
+   cd extension
+   python3 -m http.server 3000
+   ```
+3. Open [http://localhost:3000/dev.html](http://localhost:3000/dev.html) in any browser.
+
+The harness embeds the popup UI, mocks the `browser.runtime` API, and provides a real-time message log of all server communication.
+
 ## Architecture
 
 ```
