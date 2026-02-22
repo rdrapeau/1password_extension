@@ -10,8 +10,10 @@ All decryption happens in a **separate Node.js process** — your master passwor
 - 🔍 **Search** — Find items by title, username, or URL
 - ✏️ **Auto-fill** — Detect login forms and fill credentials (React/Angular/Vue compatible)
 - 📋 **Clipboard** — Copy username or password with one click
-- 🔒 **Auto-lock** — Keys zeroed from memory after 5 min idle
+- 🔒 **Auto-lock** — Keys zeroed from memory after configurable idle timeout
 - 🛡️ **Minimal permissions** — Only `activeTab` + `clipboardWrite`
+- ⚙️ **Settings** — Configurable vault path and auto-lock timeout
+- 👆 **Touch ID** — Unlock with biometrics via native macOS Keychain (macOS only)
 
 ## Quick Start
 
@@ -32,6 +34,12 @@ node native-host/server.mjs
 
 ### 3. Use it
 Click the extension icon → enter your vault path and master password → search, copy, or auto-fill.
+
+### 4. (Optional) Enable Touch ID on macOS
+```bash
+./build_swift_enclave.sh   # one-time build, requires an Apple Development cert
+```
+Then unlock your vault → open **Settings** → click **Enable Touch ID**.
 
 ## Development
 
@@ -59,8 +67,8 @@ The extension communicates with a local Node.js server via HTTP POST. The server
 ## Tests
 
 ```bash
-# Run all 116 tests
-node --test test/opvault.test.mjs test/host.test.mjs test/extension.test.mjs
+npm test
+# 124 tests
 ```
 
 | Suite | Tests | Coverage |
@@ -68,6 +76,7 @@ node --test test/opvault.test.mjs test/host.test.mjs test/extension.test.mjs
 | `opvault.test.mjs` | 30 | Crypto library (PBKDF2, HMAC, AES-CBC) |
 | `host.test.mjs` | 45 | Server session, URL matching, security |
 | `extension.test.mjs` | 41 | Manifest, permissions, XSS prevention |
+| `sync.test.mjs` | 1 | Architecture parity (host ↔ server) |
 
 ## Security
 
@@ -87,7 +96,9 @@ node --test test/opvault.test.mjs test/host.test.mjs test/extension.test.mjs
 │   ├── background.js            # Server communication
 │   ├── content.js               # Form detection + auto-fill
 │   └── popup/                   # Dark theme UI
-├── test/                        # 116 tests
+├── swift_enclave.swift          # Touch ID prompt binary (macOS)
+├── build_swift_enclave.sh       # Compile & sign swift_enclave
+├── test/                        # 124 tests
 ├── TECH.md                      # Technical architecture
 └── CHANGELOG.md
 ```
