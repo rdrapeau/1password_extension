@@ -1,0 +1,94 @@
+{
+  "manifest_version": 3,
+  "name": "1Password extension (desktop app required)",
+  "version": "4.7.5.91",
+  "description": "Extends the 1Password app on your Mac or Windows PC, so you can fill and save passwords in your browser.",
+  "icons": {
+    "16": "assets/Icon-16.png",
+    "48": "assets/Icon-48.png",
+    "128": "assets/Icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "19": "assets/toolbar.svg",
+      "38": "assets/toolbar.svg"
+    },
+    "default_title": "1Password"
+  },
+  "author": "NoLegacy",
+  "background": {
+    "scripts": [
+      "browseraction-polyfill.js",
+      "polyfill.js",
+      "websocket-connection.js",
+      "ext/sjcl.js",
+      "global.min.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "all_frames": true,
+      "css": [
+        "fillStyle.css"
+      ],
+      "js": [
+        "content-polyfill.js",
+        "injected.min.js"
+      ],
+      "run_at": "document_start",
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "exclude_matches": [
+        "*://*.atdmt.com/*",
+        "*://*.doubleclick.com/*",
+        "*://*.doubleclick.net/*",
+        "*://*.ak.fbcdn.net/*",
+        "*://plusone.google.com/*",
+        "*://platform.twitter.com/*",
+        "*://*.facebook.com/*",
+        "*://www.youtube.com/embed/*",
+        "*://stats.complex.com/*",
+        "*://*.addthis.com/*",
+        "*://vitamine.networldmedia.net/*",
+        "*://api.tweetmeme.com/*",
+        "*://*.atwola.com/*",
+        "*://engine.adzerk.net/*",
+        "*://*.stumbleupon.com/*",
+        "*://*.bizographics.com/*",
+        "*://*.musthird.com/*"
+      ]
+    }
+  ],
+  "homepage_url": "https://github.com/NoLegacy/1password-mv3",
+  "incognito": "spanning",
+  "permissions": [
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "contextMenus",
+    "scripting",
+    "webRequest",
+    "webRequestBlocking"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "short_name": "1Password",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:6258 ws://localhost:6258;"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "onepassword4-mv3-local@agilebits.com",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}
